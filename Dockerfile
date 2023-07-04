@@ -75,6 +75,9 @@ RUN bash -c 'source /usr/local/nvm/nvm.sh   && \
     npm install --prefix "/usr/local/nvm/" && \
 	nvm install v10.20.1 && \
 	nvm install v12.16.0 && \
+	nvm install v14.21.3 && \
+	nvm install v16.20.1 && \
+	nvm install v18.16.1 && \
 	nvm alias default v12.16.0 && \
 	nvm use default'
 
@@ -208,7 +211,7 @@ RUN git lfs install
 
 RUN wget -O /usr/src/google-chrome-stable_current_amd64.deb "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" && \
   dpkg -i /usr/src/google-chrome-stable_current_amd64.deb ; \
-  apt-get install -f -y && \
+  apt-get update && apt-get install -f -y && \
   rm -f /usr/src/google-chrome-stable_current_amd64.deb
 RUN google-chrome --version
 
