@@ -59,12 +59,14 @@ RUN apt-get update -y \
 		uuid-dev \
         build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev wget\
         kubectl\
+        google-cloud-sdk-gke-gcloud-auth-plugin\
     && chown -R jenkins /home/jenkins \
     && addgroup --gid 412 docker \
     && adduser jenkins docker \
     && apt-get install -y -f \
     && rm -rf /var/lib/apt/lists/*
 
+RUN gke-gcloud-auth-plugin --version
 ENV NVM_DIR /usr/local/nvm
 
 RUN mkdir -p /usr/local/nvm && chown jenkins /usr/local/nvm && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.37.0/install.sh | bash
@@ -246,4 +248,5 @@ RUN apt-get update -y \
     && apt-get install -y xvfb \
 	&& rm -rf /var/lib/apt/lists/*
 
+ENV USE_GKE_GCLOUD_AUTH_PLUGIN=true
 USER jenkins
