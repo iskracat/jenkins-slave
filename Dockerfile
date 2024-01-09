@@ -74,6 +74,7 @@ RUN bash -c 'source /usr/local/nvm/nvm.sh   && \
 	nvm install v14.21.3 && \
 	nvm install v16.20.1 && \
 	nvm install v18.16.1 && \
+	nvm install v20.10.0 && \
 	nvm alias default v12.16.0 && \
 	nvm use default'
 
