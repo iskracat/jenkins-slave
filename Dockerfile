@@ -1,10 +1,9 @@
-FROM jenkins/jnlp-slave:4.13.2-1-jdk11
+FROM debian:bullseye
 
 USER root
 
 RUN apt-get update -y \
     && apt-get install -y apt-transport-https ca-certificates curl gnupg2 software-properties-common rsync\
-    && apt-get remove -y docker docker-engine docker.io runc \
     && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list \
     && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - \
     && curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - \
@@ -20,8 +19,7 @@ RUN apt-get update -y \
         openjfx \
         jq \
         golang \
-        jmeter \
-		mplayer \
+        mplayer \
 		zip \
 		libgtk2.0-0 \
 		libgtk-3-0 \
@@ -48,11 +46,10 @@ RUN apt-get update -y \
         golang \
 		libgbm1 \
         libsqlite3-dev \
-        python-requests \
 		fonts-liberation \
 		libappindicator3-1 \
 		xdg-utils \
-        python-pip \
+        python3-pip \
         sudo \
         libbluetooth-dev \
 		tk-dev \
@@ -60,21 +57,18 @@ RUN apt-get update -y \
         build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev wget\
         kubectl\
         google-cloud-sdk-gke-gcloud-auth-plugin\
-    && chown -R jenkins /home/jenkins \
-    && addgroup --gid 412 docker \
-    && adduser jenkins docker \
     && apt-get install -y -f \
     && rm -rf /var/lib/apt/lists/*
 
 RUN gke-gcloud-auth-plugin --version
 ENV NVM_DIR /usr/local/nvm
 
-RUN mkdir -p /usr/local/nvm && chown jenkins /usr/local/nvm && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.37.0/install.sh | bash
+RUN mkdir -p /usr/local/nvm && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.37.0/install.sh | bash
 
 RUN bash -c 'source /usr/local/nvm/nvm.sh   && \
     nvm install node                    && \
     npm install -g doctoc urchin eclint dockerfile_lint && \
-    npm install --prefix "/usr/local/nvm/" && \
+    npm install -g npm@10.2.4 && \
 	nvm install v10.20.1 && \
 	nvm install v12.16.0 && \
 	nvm install v14.21.3 && \
@@ -209,7 +203,8 @@ RUN set -eux; \
 	pip --version
 
 
-RUN git lfs install
+RUN apt-get update -y \
+    && apt-get install -y git
 
 RUN wget -O /usr/src/google-chrome-stable_current_amd64.deb "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" && \
   dpkg -i /usr/src/google-chrome-stable_current_amd64.deb ; \
@@ -235,7 +230,6 @@ RUN curl -L "https://github.com/GoogleCloudPlatform/docker-credential-gcr/releas
 
 COPY sudoers /etc/
 
-RUN chown -R jenkins /usr/local
 
 COPY requirements.txt /
 RUN /usr/local/bin/pip3.8 install -r /requirements.txt
@@ -246,7 +240,17 @@ RUN bash -c 'source /usr/local/nvm/nvm.sh && nvm use default'
 
 RUN apt-get update -y \
     && apt-get install -y xvfb \
-	&& rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
+
+ARG user=jenkins
+ARG group=jenkins
+ARG uid=1000
+ARG gid=1000
+
+RUN groupadd -g "${gid}" "${group}" \
+    && useradd -l -c "Jenkins user" -d /home/"${user}" -u "${uid}" -g "${gid}" -m "${user}" \
+    && groupadd -g 412 docker \
+    && usermod -a -G docker "${user}"
+USER jenkins
 
 ENV USE_GKE_GCLOUD_AUTH_PLUGIN=true
-USER jenkins
