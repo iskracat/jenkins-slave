@@ -63,6 +63,10 @@ RUN apt-get update -y \
 RUN gke-gcloud-auth-plugin --version
 ENV NVM_DIR /usr/local/nvm
 
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+RUN unzip awscliv2.zip
+RUN ./aws/install
+
 RUN mkdir -p /usr/local/nvm && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.37.0/install.sh | bash
 
 RUN bash -c 'source /usr/local/nvm/nvm.sh   && \
