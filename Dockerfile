@@ -239,6 +239,13 @@ RUN curl -fsSL "https://github.com/helmfile/helmfile/releases/download/v${HELMFI
     && helmfile --version \
     && rm -f /tmp/helmfile.tgz
 
+ENV HELM_PLUGINS=/usr/local/share/helm/plugins
+ARG HELM_DIFF_VERSION=v3.15.6
+RUN mkdir -p "${HELM_PLUGINS}" \
+    && helm plugin install https://github.com/databus23/helm-diff --version "${HELM_DIFF_VERSION}" \
+    && chmod -R a+rX "${HELM_PLUGINS}" \
+    && helm diff version
+
 ARG FIREFOX_VERSION=75.0
 RUN wget --no-verbose -O /tmp/firefox.tar.bz2 https://download-installer.cdn.mozilla.net/pub/firefox/releases/$FIREFOX_VERSION/linux-x86_64/en-US/firefox-$FIREFOX_VERSION.tar.bz2 \
   && tar -C /opt -xjf /tmp/firefox.tar.bz2 \
