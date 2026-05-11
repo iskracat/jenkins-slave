@@ -1,5 +1,5 @@
 IMAGE ?= iskra/jenkins-slave
-TAG ?= 17
+TAG ?= 18
 
 image:
 	docker build -t $(IMAGE):$(TAG) . --platform linux/amd64

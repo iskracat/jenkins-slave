@@ -229,6 +229,16 @@ RUN curl -fsSL "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz" -o
     && helm version --short \
     && rm -rf /tmp/helm.tgz /tmp/linux-amd64
 
+ARG HELMFILE_VERSION=1.5.0
+ARG HELMFILE_LINUX_AMD64_SHA256=9612fc88e626098ca8fad63aa73781850896767b3ac1be1b305c48167da062fa
+RUN curl -fsSL "https://github.com/helmfile/helmfile/releases/download/v${HELMFILE_VERSION}/helmfile_${HELMFILE_VERSION}_linux_amd64.tar.gz" -o /tmp/helmfile.tgz \
+    && echo "${HELMFILE_LINUX_AMD64_SHA256}  /tmp/helmfile.tgz" | sha256sum -c - \
+    && tar -zxvf /tmp/helmfile.tgz -C /tmp/ helmfile \
+    && mv /tmp/helmfile /usr/local/bin/helmfile \
+    && chmod +x /usr/local/bin/helmfile \
+    && helmfile --version \
+    && rm -f /tmp/helmfile.tgz
+
 ARG FIREFOX_VERSION=75.0
 RUN wget --no-verbose -O /tmp/firefox.tar.bz2 https://download-installer.cdn.mozilla.net/pub/firefox/releases/$FIREFOX_VERSION/linux-x86_64/en-US/firefox-$FIREFOX_VERSION.tar.bz2 \
   && tar -C /opt -xjf /tmp/firefox.tar.bz2 \
