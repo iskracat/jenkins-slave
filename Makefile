@@ -1,6 +1,9 @@
+IMAGE ?= iskra/jenkins-slave
+TAG ?= 15
+
 image:
-	docker build -t iskra/jenkins-slave:15 . --platform linux/amd64
-	docker push iskra/jenkins-slave:15
+	docker build -t $(IMAGE):$(TAG) . --platform linux/amd64
+	docker push $(IMAGE):$(TAG)
 
 push:
-	docker push iskra/jenkins-slave:14
+	docker push $(IMAGE):$(TAG)

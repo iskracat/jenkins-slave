@@ -219,9 +219,15 @@ RUN google-chrome --version
 
 ENV DBUS_SESSION_BUS_ADDRESS=/dev/null
 
-RUN curl https://get.helm.sh/helm-v3.2.2-linux-amd64.tar.gz -o /tmp/helm.tgz \
+ARG HELM_VERSION=3.20.2
+ARG HELM_LINUX_AMD64_SHA256=258e830a9e613c8a7a302d6059b4bb3b9758f2f3e1bb8ea0d707ce10a9a72fea
+RUN curl -fsSL "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz" -o /tmp/helm.tgz \
+    && echo "${HELM_LINUX_AMD64_SHA256}  /tmp/helm.tgz" | sha256sum -c - \
     && tar -zxvf /tmp/helm.tgz -C /tmp/ \
-    && mv /tmp/linux-amd64/helm /usr/local/bin/helm
+    && mv /tmp/linux-amd64/helm /usr/local/bin/helm \
+    && chmod +x /usr/local/bin/helm \
+    && helm version --short \
+    && rm -rf /tmp/helm.tgz /tmp/linux-amd64
 
 ARG FIREFOX_VERSION=75.0
 RUN wget --no-verbose -O /tmp/firefox.tar.bz2 https://download-installer.cdn.mozilla.net/pub/firefox/releases/$FIREFOX_VERSION/linux-x86_64/en-US/firefox-$FIREFOX_VERSION.tar.bz2 \
