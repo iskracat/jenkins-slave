@@ -1,0 +1,16 @@
+Dockerfile
+  h_1727aeeb492b30 1,5-7,9-10,12-14,60-61,66-67,73-80,83,86-87,92-94,279-280
+Makefile
+  h_1727aeeb492b30 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "882776b1e45dd5b25edb4262f4798c3c8f6aa51e",
+  "prompts": {},
+  "humans": {
+    "h_1727aeeb492b30": {
+      "author": "Roger Boixader Güell <rboixaderg@gmail.com>"
+    }
+  }
+}
