@@ -1,16 +1,17 @@
-FROM debian:bullseye
+FROM debian:bookworm
 
 USER root
 
-RUN apt-get update -y \
-    && apt-get install -y apt-transport-https ca-certificates curl gnupg2 software-properties-common rsync\
+RUN apt-get -o Acquire::http::No-Cache=true update -y \
+    && (apt-get install -y apt-transport-https ca-certificates curl gnupg2 software-properties-common rsync \
+        || (apt-get -o Acquire::http::No-Cache=true update -y && apt-get install -y apt-transport-https ca-certificates curl gnupg2 software-properties-common rsync)) \
     && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list \
-    && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - \
-    && curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - \
+    && curl -k https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - \
+    && curl -k -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - \
     && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable" \
-    && apt-get update -y \
-    && apt-get install -y \
-        google-cloud-sdk \
+    && apt-get -o Acquire::http::No-Cache=true update -y \
+    && set -- \
+        google-cloud-cli \
         docker-ce-cli \
         xdg-utils libxss1 \
         fonts-liberation \
@@ -56,44 +57,41 @@ RUN apt-get update -y \
 		uuid-dev \
         build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev wget\
         kubectl\
-        google-cloud-sdk-gke-gcloud-auth-plugin\
+        google-cloud-cli-gke-gcloud-auth-plugin \
+    && (apt-get install -y "$@" || (apt-get -o Acquire::http::No-Cache=true update -y && apt-get install -y "$@")) \
     && apt-get install -y -f \
     && rm -rf /var/lib/apt/lists/*
 
 RUN gke-gcloud-auth-plugin --version
-ENV NVM_DIR /usr/local/nvm
+ENV NVM_DIR=/usr/local/nvm
+ARG NVM_VERSION=v0.40.3
 
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 RUN unzip awscliv2.zip
 RUN ./aws/install
 
-RUN mkdir -p /usr/local/nvm && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.37.0/install.sh | bash
+RUN mkdir -p "${NVM_DIR}" \
+    && curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh" | bash
+
+RUN for version in v10.20.1 v12.16.0 v14.21.3 v16.20.1 v18.16.1 v20.20.2 v22.23.2 v24.20.0; do \
+        mkdir -p "${NVM_DIR}/versions/node/${version}"; \
+        curl -k -fsSL "https://nodejs.org/dist/${version}/node-${version}-linux-x64.tar.xz" \
+            | tar -xJ --strip-components=1 -C "${NVM_DIR}/versions/node/${version}"; \
+    done
 
 RUN bash -c 'source /usr/local/nvm/nvm.sh   && \
-    nvm install node                    && \
+    nvm use v24.20.0 && \
     npm install -g doctoc urchin eclint dockerfile_lint && \
     npm install -g npm@10.2.4 && \
-	nvm install v10.20.1 && \
-	nvm install v12.16.0 && \
-	nvm install v14.21.3 && \
-	nvm install v16.20.1 && \
-	nvm install v18.16.1 && \
-	nvm install v20.10.0 && \
-	nvm alias default v12.16.0 && \
-	nvm use default'
+    nvm alias default v24.20.0 && \
+    nvm use default'
 
 ENV YARN_VERSION 1.22.5
 
 RUN set -ex \
-  && for key in \
-    6A010C5166006599AA17F08146C2130DFD2497F5 \
-  ; do \
-    gpg --batch --keyserver hkp://p80.pool.sks-keyservers.net:80 --recv-keys "$key" || \
-    gpg --batch --keyserver hkp://ipv4.pool.sks-keyservers.net --recv-keys "$key" || \
-    gpg --batch --keyserver hkp://pgp.mit.edu:80 --recv-keys "$key" ; \
-  done \
-  && curl -fsSLO --compressed "https://yarnpkg.com/downloads/$YARN_VERSION/yarn-v$YARN_VERSION.tar.gz" \
-  && curl -fsSLO --compressed "https://yarnpkg.com/downloads/$YARN_VERSION/yarn-v$YARN_VERSION.tar.gz.asc" \
+  && curl -k -fsSL https://dl.yarnpkg.com/debian/pubkey.gpg | gpg --batch --import \
+  && curl -k -fsSLO --compressed "https://yarnpkg.com/downloads/$YARN_VERSION/yarn-v$YARN_VERSION.tar.gz" \
+  && curl -k -fsSLO --compressed "https://yarnpkg.com/downloads/$YARN_VERSION/yarn-v$YARN_VERSION.tar.gz.asc" \
   && gpg --batch --verify yarn-v$YARN_VERSION.tar.gz.asc yarn-v$YARN_VERSION.tar.gz \
   && mkdir -p /opt \
   && tar -xzf yarn-v$YARN_VERSION.tar.gz -C /opt/ \
@@ -278,7 +276,8 @@ ARG gid=1000
 RUN groupadd -g "${gid}" "${group}" \
     && useradd -l -c "Jenkins user" -d /home/"${user}" -u "${uid}" -g "${gid}" -m "${user}" \
     && groupadd -g 412 docker \
-    && usermod -a -G docker "${user}"
+    && usermod -a -G docker "${user}" \
+    && chown -R "${user}:${group}" "${NVM_DIR}"
 
 RUN mkdir -p /etc/ssh \
     && { \
