@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# Opt-in, per-process toolchain selector for the shared iskra Jenkins agent.
+#
+# The image carries several Node versions in the nvm layout and versioned
+# prefixes for Python and pnpm. Nothing is activated by default: without
+# --node/--python/--pnpm this command is a plain exec, so PATH, the default
+# python3 (3.8.13 in /usr/local), the legacy pip3.8 CLIs and every other tool
+# stay exactly as they are for the projects that do not ask for a version.
+#
+# A selection lives for one process only. It survives separate Jenkins `sh`
+# steps because every step asks for the same versions again; there is no
+# profile, no BASH_ENV and no persisted state.
+#
+# Nothing is downloaded or installed here. An unknown version fails and lists
+# what the image has, so a stale agent image cannot silently fall back.
+set -euo pipefail
+
+# Test hook: the behaviour tests point these at fixture directories. In the
+# image the defaults are the only supported locations.
+NODE_ROOT=${ISKRA_TOOLCHAIN_NODE_ROOT:-/usr/local/nvm/versions/node}
+PYTHON_ROOT=${ISKRA_TOOLCHAIN_PYTHON_ROOT:-/opt/python}
+PNPM_ROOT=${ISKRA_TOOLCHAIN_PNPM_ROOT:-/opt/pnpm}
+
+usage() {
+  cat <<'EOF'
+usage: iskra-toolchain list
+       iskra-toolchain exec [--node V] [--python V] [--pnpm V] -- COMMAND [ARG...]
+
+  list                 versions present in this image
+  exec                 run COMMAND with the selected versions first in PATH
+
+Versions are exact, MAJOR.MINOR.PATCH (24.20.0, 3.13.18, 10.34.9). A single
+leading "v" is accepted for Node only. No selector means no change at all.
+--pnpm needs a node on PATH: pass --node as well.
+EOF
+}
+
+fail() {
+  printf 'iskra-toolchain: %s\n' "$*" >&2
+  exit 3
+}
+
+# The version becomes a path component, so only three numeric fields are
+# accepted. This refuses paths, ranges, spaces and option-like input. The
+# leading "v" is a Node convention (nvm directories), not a general one: Python
+# and pnpm versions are plain. It sets REPLY and runs in the current shell so
+# that a failure aborts the selector.
+normalize() {
+  local tool=$1 raw=$2 version=$2
+  if [ "$tool" = node ]; then
+    version=${raw#v}
+  fi
+  [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+    fail "$tool version '$raw' is not an exact MAJOR.MINOR.PATCH version"
+  REPLY=$version
+}
+
+# Numeric sort that works with both GNU and BSD sort.
+numeric_sort() {
+  sort -t. -k1,1n -k2,2n -k3,3n
+}
+
+available_node() {
+  if [ -d "$NODE_ROOT" ]; then
+    ls -1 "$NODE_ROOT" 2>/dev/null | sed -e 's/^v//' | numeric_sort | tr '\n' ' '
+  fi
+}
+
+available_python() {
+  if [ -d "$PYTHON_ROOT" ]; then
+    ls -1 "$PYTHON_ROOT" 2>/dev/null | numeric_sort | tr '\n' ' '
+  fi
+}
+
+available_pnpm() {
+  if [ -d "$PNPM_ROOT" ]; then
+    ls -1 "$PNPM_ROOT" 2>/dev/null | numeric_sort | tr '\n' ' '
+  fi
+}
+
+resolve_node() {
+  local dir
+  normalize node "$1"
+  dir="$NODE_ROOT/v$REPLY"
+  [ -x "$dir/bin/node" ] ||
+    fail "node $REPLY is not installed in this image (available: $(available_node)). This agent image must be rebuilt or the pipeline must pin an installed version; nothing is downloaded at run time."
+  REPLY=$dir/bin
+}
+
+resolve_python() {
+  local dir
+  normalize python "$1"
+  dir="$PYTHON_ROOT/$REPLY"
+  [ -x "$dir/bin/python3" ] ||
+    fail "python $REPLY is not installed in this image (available: $(available_python)). This agent image must be rebuilt or the pipeline must pin an installed version; nothing is downloaded at run time."
+  REPLY=$dir/bin
+}
+
+resolve_pnpm() {
+  local dir
+  normalize pnpm "$1"
+  dir="$PNPM_ROOT/$REPLY"
+  [ -x "$dir/bin/pnpm" ] ||
+    fail "pnpm $REPLY is not installed in this image (available: $(available_pnpm)). This agent image must be rebuilt or the pipeline must pin an installed version; nothing is downloaded at run time."
+  REPLY=$dir/bin
+}
+
+list_versions() {
+  printf 'node:   %s\n' "$(available_node)"
+  printf 'python: %s\n' "$(available_python)"
+  printf 'pnpm:   %s\n' "$(available_pnpm)"
+}
+
+command=${1:-}
+[ "$#" -gt 0 ] && shift
+
+case $command in
+  list)
+    list_versions
+    exit 0
+    ;;
+  exec) ;;
+  -h | --help | help)
+    usage
+    exit 0
+    ;;
+  '')
+    usage >&2
+    exit 2
+    ;;
+  *)
+    fail "unknown command '$command' (expected list or exec)"
+    ;;
+esac
+
+node_version=
+python_version=
+pnpm_version=
+
+while [ "$#" -gt 0 ]; do
+  case $1 in
+    --node)
+      [ "$#" -ge 2 ] || fail '--node needs a version'
+      [ -n "$2" ] || fail '--node needs a version'
+      node_version=$2
+      shift 2
+      ;;
+    --python)
+      [ "$#" -ge 2 ] || fail '--python needs a version'
+      [ -n "$2" ] || fail '--python needs a version'
+      python_version=$2
+      shift 2
+      ;;
+    --pnpm)
+      [ "$#" -ge 2 ] || fail '--pnpm needs a version'
+      [ -n "$2" ] || fail '--pnpm needs a version'
+      pnpm_version=$2
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      fail "unexpected argument '$1' (version options come before --)"
+      ;;
+  esac
+done
+
+[ "$#" -gt 0 ] || fail 'no command after --'
+
+prefixes=
+if [ -n "$pnpm_version" ]; then
+  resolve_pnpm "$pnpm_version"
+  prefixes=$REPLY
+  # pnpm 10 switches to the version named in package.json and downloads it when
+  # allowed. A job must not fetch a package manager, so the switch is disabled
+  # and the version is enforced: a project that pins another pnpm fails with
+  # "This project is configured to use vX of pnpm. Your current pnpm is vY"
+  # instead of downloading it. Both settings are the npm_config_* spelling
+  # because that is what pnpm 10.34.9 reads (verified in the image); PNPM_HOME
+  # is deliberately not set, it would point at a read-only prefix and break
+  # `pnpm add -g`, which no job needs from a shared image.
+  npm_config_manage_package_manager_versions=false
+  npm_config_package_manager_strict_version=true
+  export npm_config_manage_package_manager_versions npm_config_package_manager_strict_version
+fi
+if [ -n "$node_version" ]; then
+  resolve_node "$node_version"
+  prefixes="${prefixes:+$prefixes:}$REPLY"
+fi
+if [ -n "$python_version" ]; then
+  resolve_python "$python_version"
+  prefixes="${prefixes:+$prefixes:}$REPLY"
+fi
+
+# The pnpm prefix goes first on purpose: a Node version can carry a global pnpm
+# (an older image or a legacy agent that ran `npm i -g pnpm`), and an explicit
+# --pnpm must win over it. The selected Node still runs pnpm, because the pnpm
+# entry point resolves `node` from PATH.
+if [ -n "$prefixes" ]; then
+  PATH="$prefixes:$PATH"
+  export PATH
+fi
+
+if [ -n "$pnpm_version" ] && ! command -v node >/dev/null 2>&1; then
+  fail "pnpm $pnpm_version needs a node on PATH: add --node <version> (available: $(available_node)). Nothing is downloaded."
+fi
+
+exec "$@"

@@ -55,7 +55,7 @@ RUN apt-get -o Acquire::http::No-Cache=true update -y \
         libbluetooth-dev \
 		tk-dev \
 		uuid-dev \
-        build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev wget\
+        build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libbz2-dev liblzma-dev libexpat1-dev wget\
         kubectl\
         google-cloud-cli-gke-gcloud-auth-plugin \
     && (apt-get install -y "$@" || (apt-get -o Acquire::http::No-Cache=true update -y && apt-get install -y "$@")) \
@@ -85,6 +85,17 @@ RUN bash -c 'source /usr/local/nvm/nvm.sh   && \
     npm install -g npm@10.2.4 && \
     nvm alias default v24.20.0 && \
     nvm use default'
+
+# pnpm in a versioned prefix, installed once at build time. The package keeps
+# the "#!/usr/bin/env node" shebang, so it always runs with the Node that the
+# pipeline selected; nothing is installed per job and no npm global of a Node
+# version is mutated.
+ARG PNPM_VERSION=10.34.9
+RUN set -eux; \
+    node_bin="${NVM_DIR}/versions/node/v24.20.0/bin"; \
+    PATH="${node_bin}:${PATH}" npm install --global --prefix "/opt/pnpm/${PNPM_VERSION}" "pnpm@${PNPM_VERSION}"; \
+    head -n 1 "/opt/pnpm/${PNPM_VERSION}/bin/pnpm" | grep -q '^#!/usr/bin/env node'; \
+    PATH="${node_bin}:${PATH}" "/opt/pnpm/${PNPM_VERSION}/bin/pnpm" --version
 
 ENV YARN_VERSION 1.22.5
 
@@ -206,6 +217,49 @@ RUN set -eux; \
 	pip --version
 
 
+# Python 3.13 side-by-side for the projects that ask for it. It is never the
+# default: the 3.8.13 in /usr/local, its symlinks and the legacy pip3.8 CLIs
+# keep the PATH they have today. The prefix carries its own shared libpython
+# and an rpath, so no loader configuration, PATH entry or symlink outside /opt
+# changes. PGO is not enabled: it only affects speed and would multiply the
+# build time of a second interpreter.
+ARG PYTHON313_VERSION=3.13.18
+ARG PYTHON313_SHA256=abb0102e6d4ae027509bcb82327d9dd85515b44a3ba8ad538cfc5e9847029f68
+ARG PYTHON313_PIP_VERSION=26.3
+
+RUN set -eux; \
+	prefix="/opt/python/${PYTHON313_VERSION}"; \
+	wget -O python313.tar.xz "https://www.python.org/ftp/python/${PYTHON313_VERSION}/Python-${PYTHON313_VERSION}.tar.xz"; \
+	echo "${PYTHON313_SHA256} *python313.tar.xz" | sha256sum -c -; \
+	mkdir -p /usr/src/python313; \
+	tar --extract --directory /usr/src/python313 --strip-components=1 --file python313.tar.xz; \
+	rm python313.tar.xz; \
+	cd /usr/src/python313; \
+	gnuArch="$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)"; \
+	./configure \
+		--build="$gnuArch" \
+		--prefix="$prefix" \
+		--enable-loadable-sqlite-extensions \
+		--enable-option-checking=fatal \
+		--enable-shared \
+		--with-system-expat \
+		LDFLAGS="-Wl,-rpath,${prefix}/lib -Wl,--enable-new-dtags" \
+	; \
+	make -j "$(nproc)"; \
+	make install; \
+	cd /; \
+	rm -rf /usr/src/python313; \
+	ln -sf python3 "$prefix/bin/python"; \
+	ln -sf pip3 "$prefix/bin/pip"; \
+	"$prefix/bin/python3" -m pip install --no-cache-dir --disable-pip-version-check "pip==${PYTHON313_PIP_VERSION}"; \
+	[ "$("$prefix/bin/python3" -c 'import sys; print(sys.prefix)')" = "$prefix" ]; \
+	[ "$("$prefix/bin/python3" -c 'import sys; print(sys.base_prefix)')" = "$prefix" ]; \
+	"$prefix/bin/python3" -c 'import bz2, lzma, sqlite3, ssl, sys, venv; print(sys.version.split()[0], ssl.OPENSSL_VERSION)'; \
+	"$prefix/bin/python3" -m venv /tmp/python313-venv; \
+	/tmp/python313-venv/bin/python -c 'import sys; assert sys.prefix != sys.base_prefix, sys.prefix; print(sys.prefix)'; \
+	/tmp/python313-venv/bin/pip --version; \
+	rm -rf /tmp/python313-venv
+
 RUN apt-get update -y \
     && apt-get install -y git
 
@@ -256,14 +310,18 @@ RUN curl -L "https://github.com/GoogleCloudPlatform/docker-credential-gcr/releas
 
 COPY sudoers /etc/
 
+# Opt-in per-process selector. It only reads; it never installs or edits.
+COPY iskra-toolchain /usr/local/bin/iskra-toolchain
+RUN chmod 0755 /usr/local/bin/iskra-toolchain
+
 
 COPY requirements.txt /
 RUN /usr/local/bin/pip3.8 install -r /requirements.txt
 
 
-RUN bash -c 'source /usr/local/nvm/nvm.sh && nvm use v10.20.1'
-RUN bash -c 'source /usr/local/nvm/nvm.sh && nvm use default'
-
+# `nvm use` inside a RUN does not survive the layer, so the image has no
+# default Node on PATH; the nvm `default` alias stays v24.20.0 for anyone who
+# sources nvm.sh. Projects pick a version with iskra-toolchain instead.
 RUN apt-get update -y \
     && apt-get install -y xvfb \
     && rm -rf /var/lib/apt/lists/*
